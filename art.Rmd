@@ -1,0 +1,850 @@
+---
+title: "Untitled"
+author: "Joao Frutuoso"
+date: "2024-06-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+rm(list = ls())
+
+```
+
+
+
+
+```{r}
+# Load necessary libraries
+library(readxl)
+library(dplyr)
+library(broom)
+library(pscl)
+
+
+# Load the data
+library(readxl)
+data <- read_excel("dados/df.xlsx")
+View(data)
+```
+
+
+
+
+
+
+
+
+
+```{r}
+ls(data) 
+
+
+
+
+
+```
+```{r}
+# Function to convert columns to numeric safely
+safe_as_numeric <- function(x) {
+  as.numeric(gsub(",", ".", gsub("\\.", "", x)))
+}
+
+# Ensure relevant columns are numeric using the safe_as_numeric function
+data$sapsii <- safe_as_numeric(data$sapsii)
+data$sapsiii <- safe_as_numeric(data$sapsiii)
+data$valor_sofa_initial <- safe_as_numeric(data$valor_sofa_initial)
+data$apacheii <- safe_as_numeric(data$apacheii)
+
+# Create a new column for ICU mortality status
+data$mortality_status <- ifelse(data$Death_ICU == 1, 1, 0)
+
+# Remove rows with missing values in the relevant columns
+data_clean <- data %>% 
+  filter(!is.na(sapsii) & !is.na(sapsiii) & !is.na(valor_sofa_initial) & !is.na(apacheii) & !is.na(mortality_status))
+
+# Check the data structure
+str(data_clean)
+
+# Logistic regression for each severity score
+model_sapsii <- glm(mortality_status ~ sapsii, data = data_clean, family = binomial)
+model_sapsiii <- glm(mortality_status ~ sapsiii, data = data_clean, family = binomial)
+model_sofa <- glm(mortality_status ~ valor_sofa_initial, data = data_clean, family = binomial)
+model_apacheii <- glm(mortality_status ~ apacheii, data = data_clean, family = binomial)
+
+# Summarize the models
+summary_sapsii <- summary(model_sapsii)
+summary_sapsiii <- summary(model_sapsiii)
+summary_sofa <- summary(model_sofa)
+summary_apacheii <- summary(model_apacheii)
+
+# Print the summaries
+print(summary_sapsii)
+print(summary_sapsiii)
+print(summary_sofa)
+print(summary_apacheii)
+
+# Compare the models using AIC (Akaike Information Criterion)
+aic_values <- AIC(model_sapsii, model_sapsiii, model_sofa, model_apacheii)
+print(aic_values)
+
+# Alternatively, use pseudo R-squared values to compare models
+pseudo_r2_sapsii <- pR2(model_sapsii)
+pseudo_r2_sapsiii <- pR2(model_sapsiii)
+pseudo_r2_sofa <- pR2(model_sofa)
+pseudo_r2_apacheii <- pR2(model_apacheii)
+
+print(pseudo_r2_sapsii)
+print(pseudo_r2_sapsiii)
+print(pseudo_r2_sofa)
+print(pseudo_r2_apacheii)
+```
+
+
+```{r}
+# Function to convert columns to numeric safely
+safe_as_numeric <- function(x) {
+  as.numeric(gsub(",", ".", gsub("\\.", "", x)))
+}
+
+# Ensure relevant columns are numeric using the safe_as_numeric function
+data$valor_sofa_initial <- safe_as_numeric(data$valor_sofa_initial)
+
+# Create a new column for ICU mortality status
+data$mortality_status <- ifelse(data$Death_ICU == 1, 1, 0)
+
+# Remove rows with missing values in the relevant columns
+data_clean <- data %>% 
+  filter(!is.na(valor_sofa_initial) & !is.na(mortality_status))
+
+# Fit the logistic regression model with SOFA score
+model_sofa <- glm(mortality_status ~ valor_sofa_initial, data = data_clean, family = binomial)
+
+# Calculate predicted probabilities
+data_clean$predicted_mortality <- predict(model_sofa, type = "response")
+
+# Calculate overall adjusted mortality rate
+adjusted_mortality_rate <- mean(data_clean$predicted_mortality)
+
+# Print the adjusted mortality rate
+cat("Mortality adjusted to SOFA score: ", adjusted_mortality_rate, "\n")
+```
+
+
+```{r}
+
+# Ensure relevant columns are numeric using the safe_as_numeric function
+data$valor_sofa_initial <- safe_as_numeric(data$valor_sofa_initial)
+data$age <- safe_as_numeric(data$age)
+
+# Create a new column for ICU mortality status
+data$mortality_status <- ifelse(data$Death_ICU == 1, 1, 0)
+
+# Remove rows with missing values in the relevant columns
+data_clean <- data %>% 
+  filter(!is.na(valor_sofa_initial) & !is.na(mortality_status) & !is.na(age))
+
+# Fit the logistic regression model with SOFA score
+model_sofa <- glm(mortality_status ~ valor_sofa_initial, data = data_clean, family = binomial)
+
+# Calculate predicted probabilities
+data_clean$predicted_mortality <- predict(model_sofa, type = "response")
+
+# Segment the data into two age groups
+data_below_81 <- data_clean %>% filter(age < 81)
+data_above_81 <- data_clean %>% filter(age >= 81)
+
+# Calculate adjusted mortality rates for each group
+adjusted_mortality_below_81 <- mean(data_below_81$predicted_mortality)
+adjusted_mortality_above_81 <- mean(data_above_81$predicted_mortality)
+
+# Print the adjusted mortality rates
+cat("Adjusted mortality rate for age below 81: ", adjusted_mortality_below_81, "\n")
+cat("Adjusted mortality rate for age 81 and above: ", adjusted_mortality_above_81, "\n")
+
+# Use the Wilcoxon rank-sum test to compare the adjusted mortality rates
+wilcox_test_result <- wilcox.test(data_below_81$predicted_mortality, data_above_81$predicted_mortality)
+
+# Print the Wilcoxon test result
+print(wilcox_test_result)
+```
+
+
+```{r}
+# Function to convert columns to numeric safely
+safe_as_numeric <- function(x) {
+  as.numeric(gsub(",", ".", gsub("\\.", "", x)))
+}
+
+# Ensure relevant columns are numeric using the safe_as_numeric function
+data$valor_sofa_initial <- safe_as_numeric(data$valor_sofa_initial)
+data$valor_sofa_final <- safe_as_numeric(data$valor_sofa_final)
+data$age <- safe_as_numeric(data$age)
+
+# Create a new column for mortality status outside ICU
+data$mortality_status_outside_ICU <- ifelse(data$Death_outside_ICU == 1, 1, 0)
+
+# Remove rows with missing values in the relevant columns
+data_clean <- data %>% 
+  filter(!is.na(valor_sofa_final) & !is.na(mortality_status_outside_ICU) & !is.na(age))
+
+# Fit the logistic regression model with SOFA final score
+model_sofa_final <- glm(mortality_status_outside_ICU ~ valor_sofa_final, data = data_clean, family = binomial)
+
+# Calculate predicted probabilities
+data_clean$predicted_mortality_outside_ICU <- predict(model_sofa_final, type = "response")
+
+# Segment the data into two age groups
+data_below_81 <- data_clean %>% filter(age < 81)
+data_above_81 <- data_clean %>% filter(age >= 81)
+
+# Calculate adjusted mortality rates for each group
+adjusted_mortality_below_81 <- mean(data_below_81$predicted_mortality_outside_ICU)
+adjusted_mortality_above_81 <- mean(data_above_81$predicted_mortality_outside_ICU)
+
+# Print the adjusted mortality rates
+cat("Adjusted mortality rate outside ICU for age below 81: ", adjusted_mortality_below_81, "\n")
+cat("Adjusted mortality rate outside ICU for age 81 and above: ", adjusted_mortality_above_81, "\n")
+
+# Use the Wilcoxon rank-sum test to compare the adjusted mortality rates
+wilcox_test_result <- wilcox.test(data_below_81$predicted_mortality_outside_ICU, data_above_81$predicted_mortality_outside_ICU)
+
+# Print the Wilcoxon test result
+print(wilcox_test_result)
+```
+
+
+```{r}
+# Function to convert columns to numeric safely
+safe_as_numeric <- function(x) {
+  as.numeric(gsub(",", ".", gsub("\\.", "", x)))
+}
+
+# Ensure relevant columns are numeric using the safe_as_numeric function
+data$sapsii <- safe_as_numeric(data$sapsii)
+data$sapsiii <- safe_as_numeric(data$sapsiii)
+data$valor_sofa_initial <- safe_as_numeric(data$valor_sofa_initial)
+data$valor_sofa_final <- safe_as_numeric(data$valor_sofa_final)
+data$apacheii <- safe_as_numeric(data$apacheii)
+
+# Create a new column for mortality status outside ICU
+data$mortality_status_outside_ICU <- ifelse(data$Death_outside_ICU == 1, 1, 0)
+
+# Remove rows with missing values in the relevant columns
+data_clean <- data %>% 
+  filter(!is.na(sapsii) & !is.na(sapsiii) & !is.na(valor_sofa_initial) & !is.na(valor_sofa_final) & !is.na(apacheii) & !is.na(mortality_status_outside_ICU))
+
+# Logistic regression for each severity score to predict mortality outside ICU
+model_sapsii <- glm(mortality_status_outside_ICU ~ sapsii, data = data_clean, family = binomial)
+model_sapsiii <- glm(mortality_status_outside_ICU ~ sapsiii, data = data_clean, family = binomial)
+model_sofa_initial <- glm(mortality_status_outside_ICU ~ valor_sofa_initial, data = data_clean, family = binomial)
+model_sofa_final <- glm(mortality_status_outside_ICU ~ valor_sofa_final, data = data_clean, family = binomial)
+model_apacheii <- glm(mortality_status_outside_ICU ~ apacheii, data = data_clean, family = binomial)
+
+# Summarize the models
+summary_sapsii <- summary(model_sapsii)
+summary_sapsiii <- summary(model_sapsiii)
+summary_sofa_initial <- summary(model_sofa_initial)
+summary_sofa_final <- summary(model_sofa_final)
+summary_apacheii <- summary(model_apacheii)
+
+# Print the summaries
+print(summary_sapsii)
+print(summary_sapsiii)
+print(summary_sofa_initial)
+print(summary_sofa_final)
+print(summary_apacheii)
+
+# Compare the models using AIC (Akaike Information Criterion)
+aic_values <- AIC(model_sapsii, model_sapsiii, model_sofa_initial, model_sofa_final, model_apacheii)
+print(aic_values)
+
+# Alternatively, use pseudo R-squared values to compare models
+pseudo_r2_sapsii <- pR2(model_sapsii)
+pseudo_r2_sapsiii <- pR2(model_sapsiii)
+pseudo_r2_sofa_initial <- pR2(model_sofa_initial)
+pseudo_r2_sofa_final <- pR2(model_sofa_final)
+pseudo_r2_apacheii <- pR2(model_apacheii)
+
+print(pseudo_r2_sapsii)
+print(pseudo_r2_sapsiii)
+print(pseudo_r2_sofa_initial)
+print(pseudo_r2_sofa_final)
+print(pseudo_r2_apacheii)
+```
+
+
+```{r}
+library(readxl)
+library(dplyr)
+library(randomForest)
+library(caret)
+library(ggplot2)
+library(mice) 
+```
+
+
+```{r}
+data <- read_excel("dados/df.xlsx")
+
+```
+
+
+
+
+
+```{r}
+
+
+print("Data Loaded")
+print(head(data))
+print(names(data))
+
+# Function to convert columns to numeric safely
+safe_as_numeric <- function(x) {
+  as.numeric(gsub(",", ".", gsub("\\.", "", x)))
+}
+
+# List of numeric columns to convert
+numeric_columns <- c("Hospital_stay_days", "1_sofa", "apacheii", "sapsii", "sapsiii", 
+                     "sapsiii_mortalidade_prev", "SOFA_hemodinamic_initial", 
+                     "SOFA_pulmonar_initial", "SOFA_renal_initial", "SOFA_neurologic_initial", 
+                     "SOFA_hematologic_initial", "SOFA_hepatic_initial", "SOFA_sepsis_initial", 
+                     "SOFA_BPsis_initial", "SOFA_dobutamine_initial", "SOFA_adrenaline_initial", 
+                     "SOFA_dopamine_initial", "SOFA_noradrenaline_initial", "SOFA_fio2_initial", 
+                     "SOFA_pao2_initial", "SOFA_Srcreatinine_initial", "SOFA_Dyuresis_initial", 
+                     "SOFA_glasgow_initial", "SOFA_platlet_initial", "SOFA_bilirrubine_initial", 
+                     "valor_sofa_initial", "SOFA_hemodinamic_final", "SOFA_pulmonar_final", 
+                     "SOFA_renal_final", "SOFA_neurologic_final", "SOFA_hematologico_final", 
+                     "SOFA_hepatic_final", "SOFA__sepsis_final", "SOFA_SysBP_final", 
+                     "SOFA_dobutamine_final", "SOFA_adrenaline_final", "SOFA_dopamine_final", 
+                     "SOFA_noradrenaline_final", "SOFA_fio2_final", "SOFA_pao2_final", 
+                     "SOFA_Serumcreatinene_final", "SOFA_Dyuresis_final", "SOFA_glasgow_final", 
+                     "SOFA_platlets_final", "SOFA_Bilirubine_final", "valor_sofa_final")
+
+# Check which columns exist in the dataset
+existing_columns <- numeric_columns[numeric_columns %in% colnames(data)]
+print("Existing Numeric Columns")
+print(existing_columns)
+
+# Convert existing columns to numeric
+for (col in existing_columns) {
+  data[[col]] <- safe_as_numeric(data[[col]])
+  print(paste("Converted column:", col))
+  print(summary(data[[col]]))  # Check the conversion result
+}
+
+# Create a new column for mortality status outside ICU
+data$mortality_status_outside_ICU <- ifelse(data$Death_outside_ICU == 1, 1, 0)
+print("Mortality Status Column Created")
+
+# Analyze the pattern of missing data
+missing_data_summary <- sapply(data, function(x) sum(is.na(x)))
+print("Missing Data Summary")
+print(missing_data_summary)
+
+# Visualize missing data pattern
+md.pattern(data)
+
+```
+
+
+```{r}
+# Set threshold for maximum percentage of missing values
+threshold <- 0.90
+
+# Calculate the percentage of missing values for each column
+missing_percentages <- sapply(data, function(x) sum(is.na(x)) / length(x))
+
+# Identify columns to keep (those with missing percentages less than the threshold)
+columns_to_keep <- names(missing_percentages[missing_percentages <= threshold])
+
+# Filter the data to keep only the columns with acceptable missing data
+data_clean <- data[ , columns_to_keep]
+
+# Print the cleaned data and the names of the remaining columns
+print("Columns with acceptable missing data")
+print(names(data_clean))
+print("Data after removing columns with excessive missing data")
+print(head(data_clean))
+```
+```{r}
+
+library(readxl)
+library(dplyr)
+library(randomForest)
+library(VIM)
+```
+
+```{r}
+library(readxl)
+library(dplyr)
+library(randomForest)
+
+# Load the data
+data <- read_excel("dados/df.xlsx")
+
+# List of numeric columns to convert
+numeric_columns <- c("1_sofa", "apacheii", "sapsii", "sapsiii", 
+                     "sapsiii_mortalidade_prev", "SOFA_hemodinamic_initial", 
+                     "SOFA_pulmonar_initial", "SOFA_renal_initial", "SOFA_neurologic_initial", 
+                     "SOFA_hematologic_initial", "SOFA_hepatic_initial", "SOFA_sepsis_initial", 
+                     "SOFA_BPsis_initial", "SOFA_dobutamine_initial", "SOFA_adrenaline_initial", 
+                     "SOFA_dopamine_initial", "SOFA_noradrenaline_initial", "SOFA_fio2_initial", 
+                     "SOFA_pao2_initial", "SOFA_Srcreatinine_initial", "SOFA_glasgow_initial", 
+                     "SOFA_platlet_initial", "SOFA_bilirrubine_initial", "valor_sofa_initial", 
+                     "SOFA_hemodinamic_final", "SOFA_pulmonar_final", "SOFA_renal_final", 
+                     "SOFA_neurologic_final", "SOFA_hematologico_final", "SOFA_hepatic_final", 
+                     "SOFA__sepsis_final", "SOFA_SysBP_final", "SOFA_dobutamine_final", 
+                     "SOFA_adrenaline_final", "SOFA_dopamine_final", "SOFA_noradrenaline_final", 
+                     "SOFA_fio2_final", "SOFA_pao2_final", "SOFA_Serumcreatinene_final", 
+                     "SOFA_Dyuresis_final", "SOFA_glasgow_final", "SOFA_platlets_final", 
+                     "SOFA_Bilirubine_final", "valor_sofa_final")
+
+# Function to convert columns to numeric safely
+safe_as_numeric <- function(x) {
+  as.numeric(gsub(",", ".", gsub("\\.", "", x)))
+}
+
+# Check which columns exist in the dataset
+existing_columns <- numeric_columns[numeric_columns %in% colnames(data)]
+print("Existing Numeric Columns")
+print(existing_columns)
+
+# Convert existing columns to numeric
+for (col in existing_columns) {
+  data[[col]] <- safe_as_numeric(data[[col]])
+  print(paste("Converted column:", col))
+  print(summary(data[[col]]))  # Check the conversion result
+}
+
+# Ensure the 'Death_outside_ICU' column is present before adding 'mortality_status_outside_ICU'
+if (!("Death_outside_ICU" %in% names(data))) {
+  stop("The column 'Death_outside_ICU' is not present in the dataset.")
+}
+
+# Create a new column for mortality status outside ICU
+data$mortality_status_outside_ICU <- ifelse(data$Death_outside_ICU == 1, 1, 0)
+print("Mortality Status Column Created")
+
+# Analyze the pattern of missing data
+missing_data_summary <- sapply(data, function(x) sum(is.na(x)))
+print("Missing Data Summary")
+print(missing_data_summary)
+
+# Remove columns with more than 30% missing data
+threshold <- 0.30
+columns_to_keep <- names(data)[colMeans(is.na(data)) <= threshold]
+data <- data[, columns_to_keep]
+print("Columns after removing those with excessive missing data:")
+print(names(data))
+
+# Filter rows with complete cases
+data_clean <- data %>% filter(complete.cases(.))
+print("Filtered Complete Cases")
+print(dim(data_clean))  # Check dimensions of the cleaned data
+
+# Convert categorical variables to factors
+categorical_vars <- c("Admission_type", "diagnostico", "antibiotico")
+for (var in categorical_vars) {
+  if (var %in% colnames(data_clean)) {
+    data_clean[[var]] <- as.factor(data_clean[[var]])
+  }
+}
+
+# Identify and remove factor variables with only one level
+for (var in categorical_vars) {
+  if (var %in% colnames(data_clean)) {
+    if (nlevels(data_clean[[var]]) < 2) {
+      data_clean[[var]] <- NULL
+      print(paste("Removed factor with one level:", var))
+    }
+  }
+}
+
+# Identify and remove numeric columns with only one unique value
+unique_vals <- sapply(data_clean, function(x) length(unique(x)))
+data_clean <- data_clean[, unique_vals > 1]
+print("Removed Numeric Columns with One Unique Value")
+
+# Clean column names
+colnames(data_clean) <- make.names(colnames(data_clean), unique = TRUE)
+print("Cleaned Column Names:")
+print(names(data_clean))
+
+# Ensure all non-numeric columns are factors
+non_numeric_columns <- names(data_clean)[!sapply(data_clean, is.numeric)]
+for (col in non_numeric_columns) {
+  data_clean[[col]] <- as.factor(data_clean[[col]])
+}
+
+# Set the seed for reproducibility
+set.seed(123)
+
+# Limit the predictor variables for the model
+predictor_variables <- c("age", "ICU_time", "Hospital_stay_days", "1_sofa", "apacheii", 
+                         "sapsii", "sapsiii", "SOFA_hemodinamic_initial", "SOFA_pulmonar_initial",
+                         "SOFA_renal_initial", "SOFA_neurologic_initial", "SOFA_hematologic_initial", 
+                         "SOFA_hepatic_initial", "SOFA_sepsis_initial", "SOFA_BPsis_initial", 
+                         "SOFA_dobutamine_initial", "SOFA_adrenaline_initial", "SOFA_dopamine_initial", 
+                         "SOFA_noradrenaline_initial", "SOFA_fio2_initial", "SOFA_pao2_initial", 
+                         "SOFA_Srcreatinine_initial", "SOFA_glasgow_initial", "SOFA_platlet_initial", 
+                         "SOFA_bilirrubine_initial", "valor_sofa_initial", "SOFA_hemodinamic_final", 
+                         "SOFA_pulmonar_final", "SOFA_renal_final", "SOFA_neurologic_final", 
+                         "SOFA_hematologico_final", "SOFA_hepatic_final", "SOFA__sepsis_final", 
+                         "SOFA_SysBP_final", "SOFA_dobutamine_final", "SOFA_adrenaline_final", 
+                         "SOFA_dopamine_final", "SOFA_noradrenaline_final", "SOFA_fio2_final", 
+                         "SOFA_pao2_final", "SOFA_Serumcreatinene_final", "SOFA_Dyuresis_final", 
+                         "SOFA_glasgow_final", "SOFA_platlets_final", "SOFA_Bilirubine_final", 
+                         "valor_sofa_final")
+
+# Ensure all selected predictor variables are in the dataset
+predictor_variables <- predictor_variables[predictor_variables %in% names(data_clean)]
+
+# Create the formula for the model
+formula <- as.formula(paste("mortality_status_outside_ICU", "~", paste(predictor_variables, collapse = " + ")))
+
+# Handle missing values with na.roughfix
+data_clean <- na.roughfix(data_clean)
+
+# Train the random forest model
+rf_model <- randomForest(formula, data = data_clean, importance = TRUE, ntree = 500)
+print("Random Forest Model Trained")
+
+# Display variable importance
+importance <- importance(rf_model)
+varImpPlot(rf_model)
+
+print("Variable Importance:")
+print(importance)
+```
+
+
+```{r}
+library(readxl)
+library(dplyr)
+library(randomForest)
+
+# Load the data
+data <- read_excel("dados/df.xlsx")
+
+# List of numeric columns to convert
+numeric_columns <- c("1_sofa", "apacheii", "sapsii", "sapsiii", 
+                     "sapsiii_mortalidade_prev", "SOFA_hemodinamic_initial", 
+                     "SOFA_pulmonar_initial", "SOFA_renal_initial", "SOFA_neurologic_initial", 
+                     "SOFA_hematologic_initial", "SOFA_hepatic_initial", "SOFA_sepsis_initial", 
+                     "SOFA_BPsis_initial", "SOFA_dobutamine_initial", "SOFA_adrenaline_initial", 
+                     "SOFA_dopamine_initial", "SOFA_noradrenaline_initial", "SOFA_fio2_initial", 
+                     "SOFA_pao2_initial", "SOFA_Srcreatinine_initial", "SOFA_glasgow_initial", 
+                     "SOFA_platlet_initial", "SOFA_bilirrubine_initial", "valor_sofa_initial", 
+                     "SOFA_hemodinamic_final", "SOFA_pulmonar_final", "SOFA_renal_final", 
+                     "SOFA_neurologic_final", "SOFA_hematologico_final", "SOFA_hepatic_final", 
+                     "SOFA__sepsis_final", "SOFA_SysBP_final", "SOFA_dobutamine_final", 
+                     "SOFA_adrenaline_final", "SOFA_dopamine_final", "SOFA_noradrenaline_final", 
+                     "SOFA_fio2_final", "SOFA_pao2_final", "SOFA_Serumcreatinene_final", 
+                     "SOFA_Dyuresis_final", "SOFA_glasgow_final", "SOFA_platlets_final", 
+                     "SOFA_Bilirubine_final", "valor_sofa_final")
+
+# Function to convert columns to numeric safely
+safe_as_numeric <- function(x) {
+  as.numeric(gsub(",", ".", gsub("\\.", "", x)))
+}
+
+# Check which columns exist in the dataset
+existing_columns <- numeric_columns[numeric_columns %in% colnames(data)]
+print("Existing Numeric Columns")
+print(existing_columns)
+
+# Convert existing columns to numeric
+for (col in existing_columns) {
+  data[[col]] <- safe_as_numeric(data[[col]])
+  print(paste("Converted column:", col))
+  print(summary(data[[col]]))  # Check the conversion result
+}
+
+# Create a new column for mortality status outside ICU
+if ("Death_outside_ICU" %in% names(data)) {
+  data$mortality_status_outside_ICU <- ifelse(data$Death_outside_ICU == 1, 1, 0)
+  print("Mortality Status Column Created")
+} else {
+  stop("The column 'Death_outside_ICU' is not present in the dataset.")
+}
+
+# Remove columns with more than 30% missing data
+threshold <- 0.30
+columns_to_keep <- names(data)[colMeans(is.na(data)) <= threshold]
+data <- data[, columns_to_keep]
+print("Columns after removing those with excessive missing data:")
+print(names(data))
+
+# Filter rows with complete cases
+data_clean <- data %>% filter(complete.cases(.))
+print("Filtered Complete Cases")
+print(dim(data_clean))  # Check dimensions of the cleaned data
+
+# Convert categorical variables to factors
+categorical_vars <- c("Admission_type", "diagnostico", "antibiotico")
+for (var in categorical_vars) {
+  if (var %in% colnames(data_clean)) {
+    data_clean[[var]] <- as.factor(data_clean[[var]])
+  }
+}
+
+# Identify and remove factor variables with only one level
+for (var in categorical_vars) {
+  if (var %in% colnames(data_clean)) {
+    if (nlevels(data_clean[[var]]) < 2) {
+      data_clean[[var]] <- NULL
+      print(paste("Removed factor with one level:", var))
+    }
+  }
+}
+
+# Identify and remove numeric columns with only one unique value
+unique_vals <- sapply(data_clean, function(x) length(unique(x)))
+data_clean <- data_clean[, unique_vals > 1]
+print("Removed Numeric Columns with One Unique Value")
+
+# Clean column names
+colnames(data_clean) <- make.names(colnames(data_clean), unique = TRUE)
+print("Cleaned Column Names:")
+print(names(data_clean))
+
+# Ensure all non-numeric columns are factors
+non_numeric_columns <- names(data_clean)[!sapply(data_clean, is.numeric)]
+for (col in non_numeric_columns) {
+  data_clean[[col]] <- as.factor(data_clean[[col]])
+}
+
+# Select top predictor variables
+predictor_variables <- c("age", "valor_sofa_final", "SOFA_pulmonar_final", 
+                         "SOFA_platlet_initial", "SOFA_platlets_final", 
+                         "SOFA_BPsis_initial", "SOFA_bilirrubine_initial", 
+                         "SOFA_Serumcreatinene_final", "SOFA_glasgow_final")
+
+# Ensure all selected predictor variables are in the dataset
+predictor_variables <- predictor_variables[predictor_variables %in% names(data_clean)]
+
+# Create the formula for the model
+formula <- as.formula(paste("mortality_status_outside_ICU", "~", paste(predictor_variables, collapse = " + ")))
+
+# Handle missing values with na.roughfix
+data_clean <- na.roughfix(data_clean)
+
+# Train the random forest model
+rf_model <- randomForest(formula, data = data_clean, importance = TRUE, ntree = 500)
+print("Random Forest Model Trained")
+
+# Display variable importance
+importance <- importance(rf_model)
+varImpPlot(rf_model)
+
+print("Variable Importance:")
+print(importance)
+
+```
+
+
+```{r}
+library(readxl)
+library(dplyr)
+library(randomForest)
+
+# Load the data
+data <- read_excel("dados/df.xlsx")
+
+# List of numeric columns to convert
+numeric_columns <- c("1_sofa", "apacheii", "sapsii", "sapsiii", 
+                     "sapsiii_mortalidade_prev", "SOFA_hemodinamic_initial", 
+                     "SOFA_pulmonar_initial", "SOFA_renal_initial", "SOFA_neurologic_initial", 
+                     "SOFA_hematologic_initial", "SOFA_hepatic_initial", "SOFA_sepsis_initial", 
+                     "SOFA_BPsis_initial", "SOFA_dobutamine_initial", "SOFA_adrenaline_initial", 
+                     "SOFA_dopamine_initial", "SOFA_noradrenaline_initial", "SOFA_fio2_initial", 
+                     "SOFA_pao2_initial", "SOFA_Srcreatinine_initial", "SOFA_glasgow_initial", 
+                     "SOFA_platlet_initial", "SOFA_bilirrubine_initial", "valor_sofa_initial", 
+                     "SOFA_hemodinamic_final", "SOFA_pulmonar_final", "SOFA_renal_final", 
+                     "SOFA_neurologic_final", "SOFA_hematologico_final", "SOFA_hepatic_final", 
+                     "SOFA__sepsis_final", "SOFA_SysBP_final", "SOFA_dobutamine_final", 
+                     "SOFA_adrenaline_final", "SOFA_dopamine_final", "SOFA_noradrenaline_final", 
+                     "SOFA_fio2_final", "SOFA_pao2_final", "SOFA_Serumcreatinene_final", 
+                     "SOFA_Dyuresis_final", "SOFA_glasgow_final", "SOFA_platlets_final", 
+                     "SOFA_Bilirubine_final", "valor_sofa_final")
+
+# Function to convert columns to numeric safely
+safe_as_numeric <- function(x) {
+  as.numeric(gsub(",", ".", gsub("\\.", "", x)))
+}
+
+# Check which columns exist in the dataset
+existing_columns <- numeric_columns[numeric_columns %in% colnames(data)]
+print("Existing Numeric Columns")
+print(existing_columns)
+
+# Convert existing columns to numeric
+for (col in existing_columns) {
+  data[[col]] <- safe_as_numeric(data[[col]])
+  print(paste("Converted column:", col))
+  print(summary(data[[col]]))  # Check the conversion result
+}
+
+# Create a new column for mortality status outside ICU
+if ("Death_outside_ICU" %in% names(data)) {
+  data$mortality_status_outside_ICU <- ifelse(data$Death_outside_ICU == 1, 1, 0)
+  print("Mortality Status Column Created")
+} else {
+  stop("The column 'Death_outside_ICU' is not present in the dataset.")
+}
+
+# Remove columns with more than 30% missing data
+threshold <- 0.30
+columns_to_keep <- names(data)[colMeans(is.na(data)) <= threshold]
+data <- data[, columns_to_keep]
+print("Columns after removing those with excessive missing data:")
+print(names(data))
+
+# Filter rows with complete cases
+data_clean <- data %>% filter(complete.cases(.))
+print("Filtered Complete Cases")
+print(dim(data_clean))  # Check dimensions of the cleaned data
+
+# Convert categorical variables to factors
+categorical_vars <- c("Admission_type", "diagnostico", "antibiotico")
+for (var in categorical_vars) {
+  if (var %in% colnames(data_clean)) {
+    data_clean[[var]] <- as.factor(data_clean[[var]])
+  }
+}
+
+# Identify and remove factor variables with only one level
+for (var in categorical_vars) {
+  if (var %in% colnames(data_clean)) {
+    if (nlevels(data_clean[[var]]) < 2) {
+      data_clean[[var]] <- NULL
+      print(paste("Removed factor with one level:", var))
+    }
+  }
+}
+
+# Identify and remove numeric columns with only one unique value
+unique_vals <- sapply(data_clean, function(x) length(unique(x)))
+data_clean <- data_clean[, unique_vals > 1]
+print("Removed Numeric Columns with One Unique Value")
+
+# Clean column names
+colnames(data_clean) <- make.names(colnames(data_clean), unique = TRUE)
+print("Cleaned Column Names:")
+print(names(data_clean))
+
+# Ensure all non-numeric columns are factors
+non_numeric_columns <- names(data_clean)[!sapply(data_clean, is.numeric)]
+for (col in non_numeric_columns) {
+  data_clean[[col]] <- as.factor(data_clean[[col]])
+}
+
+# Split the data into elderly and non-elderly groups
+elderly_data <- data_clean %>% filter(age >= 81)
+non_elderly_data <- data_clean %>% filter(age < 81)
+
+# Select top predictor variables
+predictor_variables <- c("age", "valor_sofa_final", "SOFA_pulmonar_final", 
+                         "SOFA_platlet_initial", "SOFA_platlets_final", 
+                         "SOFA_BPsis_initial", "SOFA_bilirrubine_initial", 
+                         "SOFA_Serumcreatinene_final", "SOFA_glasgow_final")
+
+# Ensure all selected predictor variables are in the dataset
+predictor_variables <- predictor_variables[predictor_variables %in% names(data_clean)]
+
+# Create the formula for the model
+formula <- as.formula(paste("mortality_status_outside_ICU", "~", paste(predictor_variables, collapse = " + ")))
+
+# Handle missing values with na.roughfix
+elderly_data <- na.roughfix(elderly_data)
+non_elderly_data <- na.roughfix(non_elderly_data)
+
+# Train the random forest model for elderly group
+rf_model_elderly <- randomForest(formula, data = elderly_data, importance = TRUE, ntree = 500)
+
+# Train the random forest model for non-elderly group
+rf_model_non_elderly <- randomForest(formula, data = non_elderly_data, importance = TRUE, ntree = 500)
+
+# Extract variable importance
+importance_elderly <- importance(rf_model_elderly)
+importance_non_elderly <- importance(rf_model_non_elderly)
+
+# Create data frames for comparison
+importance_elderly_df <- data.frame(Variable = rownames(importance_elderly), Elderly_IncMSE = importance_elderly[,1], Elderly_IncNodePurity = importance_elderly[,2])
+importance_non_elderly_df <- data.frame(Variable = rownames(importance_non_elderly), NonElderly_IncMSE = importance_non_elderly[,1], NonElderly_IncNodePurity = importance_non_elderly[,2])
+
+# Merge the data frames for comparison
+importance_comparison <- merge(importance_elderly_df, importance_non_elderly_df, by = "Variable")
+
+# Print the comparison
+print("Variable Importance Comparison:")
+print(importance_comparison)
+```
+
+```{r}
+
+# Fit logistic regression model
+model <- glm(mortality_status_outside_ICU ~ age + valor_sofa_final, data = data_clean, family = binomial)
+
+# Display model summary
+summary(model)
+
+# Predict probabilities
+predicted_probs <- predict(model, type = "response")
+
+# Check the predicted probabilities
+head(predicted_probs)
+```
+
+```{r}
+
+
+```{r}
+# Ensure the mortality_status_outside_ICU column exists
+if (!("mortality_status_outside_ICU" %in% names(data_clean))) {
+  data_clean$mortality_status_outside_ICU <- ifelse(data_clean$Death_outside_ICU == 1, 1, 0)
+}
+# Separate the data into two age groups
+below_81 <- data_clean[data_clean$age < 81, ]
+above_81 <- data_clean[data_clean$age >= 81, ]
+
+# Compute mortality rates for both groups
+mortality_rate_below_81 <- mean(below_81$mortality_status_outside_ICU, na.rm = TRUE)
+mortality_rate_above_81 <- mean(above_81$mortality_status_outside_ICU, na.rm = TRUE)
+
+# Print the mortality rates
+cat("Mortality rate for age below 81: ", mortality_rate_below_81, "\n")
+cat("Mortality rate for age 81 and above: ", mortality_rate_above_81, "\n")
+```
+```
+
+
+
+
+
+
